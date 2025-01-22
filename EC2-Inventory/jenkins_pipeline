@@ -1,0 +1,54 @@
+
+pipeline {
+    agent any
+    environment {
+        GIT_REPO = "https://gitlab.com/ab/scripts/script_artifacts.git" # change the repo url
+        GIT_CREDS = "jenkins"
+        BRANCH = "master"
+        DIR_NAME = "script"
+    }
+    parameters {
+        choice(name: 'AWS_PROFILES', choices: "proto1 nonprodacct\nprodacct adminacct proto2 proto3\nproto1 nonprodacct prodacct adminacct proto3 nonprod1 proto2 proto4 proto5 proto6 poweruser1\nnonprodacct adminacct prodacct proto1 nonprod1 proto2 proto4 proto5 proto3 proto6 poweruser1 poweruser2 poweruser3 poweruser4 poweruser5 admin_prod admin_prod1 uatRO prodacct house-nonprodacct datawarehousetest mpprotoRO1 ", description: 'Select an AWS profile')
+    }
+
+    stages {
+        stage('Clean WS'){
+            steps{
+                cleanWs()
+            }
+        }
+        stage('SCM'){
+            steps{
+                script{
+                    echo "Cloning ${DIR_NAME} repository"
+                    checkout([$class: 'GitSCM', branches: [[name: "${BRANCH}"]],
+                      doGenerateSubmoduleConfigurations: false,
+                      extensions: [[$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [[path: env.DIR_NAME]]]],
+                      submoduleCfg: [],
+                       userRemoteConfigs: [[credentialsId: "${GIT_CREDS}", url: "${GIT_REPO}"]]
+                    ])
+                }
+            }
+        }
+        stage('Run EC2 Instance Report') {
+            agent { label 'master' }
+            steps {
+                script {
+                    // Retrieve the selected profile from the AWS_PROFILES parameter
+                    def selectedProfile = params.AWS_PROFILES.trim()
+
+                    // Run the Python script with the selected profile
+                    sh """
+                        set -o | grep pipefail
+                        set -o pipefail
+                        set -o | grep pipefail
+                        python3 /var/lib/jenkins/workspace/ab/ec2_inventory_tags.py ${selectedProfile} | tee tags.all.txt  # replace the path for the python script
+                        
+                    """
+                    archiveArtifacts artifacts: 'tags.all.txt, *.xlsx', allowEmptyArchive: true
+                }
+            }
+        }
+
+    }
+}
